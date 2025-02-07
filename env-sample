@@ -1,1 +1,5 @@
 GITHUB_ORG=github.com:ifegmbh
+ODOO_URL=https://odoo
+ODOO_DB=odoo
+ODOO_USER=user
+ODOO_TOKEN=********

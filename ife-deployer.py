@@ -1,5 +1,6 @@
 import click
 from dotenv import load_dotenv
+import xmlrpc.client
 import git
 import os
 import re
@@ -9,6 +10,26 @@ import sys
 load_dotenv()
 REPO_DIR = "./repos"
 GITHUB_ORG = os.getenv("GITHUB_ORG")
+ODOO_URL = os.getenv("ODOO_URL")
+ODOO_DB = os.getenv("ODOO_DB")
+ODOO_USER = os.getenv("ODOO_USER")
+ODOO_TOKEN = os.getenv("ODOO_TOKEN")
+
+def get_odoo_connection(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN):
+    try:
+        client = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(ODOO_URL))
+        client.version()  # Attempt to get the version to check the connection
+    except Exception as e:
+        print(f"Failed to connect to Odoo: {e}")
+        sys.exit(1)
+    try:
+        uid = client.authenticate(ODOO_DB, ODOO_USER, ODOO_TOKEN, {})
+        if not uid:
+            raise ValueError("Authentication failed")
+    except Exception as e:
+        print(f"Database connection failed: {e}")
+        sys.exit(1)
+
 
 def check_slug(slug):
     # TODO
@@ -27,6 +48,7 @@ def check_slug(slug):
 @click.argument('slug')
 
 def deploy(slug):
+    odoo_instance = get_odoo_connection(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN)
     slug, deployment_folder = check_slug(slug)
     if not os.path.exists(deployment_folder):
         try:
