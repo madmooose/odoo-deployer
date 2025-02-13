@@ -1,10 +1,11 @@
 import click
 from dotenv import load_dotenv
-import xmlrpc.client
 import git
+import json
 import os
 import re
 import sys
+import xmlrpc.client
 
 # Load environment variables from .env file
 load_dotenv()
@@ -14,6 +15,7 @@ ODOO_URL = os.getenv("ODOO_URL")
 ODOO_DB = os.getenv("ODOO_DB")
 ODOO_USER = os.getenv("ODOO_USER")
 ODOO_TOKEN = os.getenv("ODOO_TOKEN")
+DEPLOYMENT_TYPE = 14
 
 def get_odoo_connection(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN):
     try:
@@ -29,6 +31,7 @@ def get_odoo_connection(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN):
     except Exception as e:
         print(f"Database connection failed: {e}")
         sys.exit(1)
+    return client
 
 
 def check_slug(slug):
@@ -44,12 +47,7 @@ def check_slug(slug):
     else:
         raise ValueError("Path is not valid")
 
-@click.command()
-@click.argument('slug')
-
-def deploy(slug):
-    odoo_instance = get_odoo_connection(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN)
-    slug, deployment_folder = check_slug(slug)
+def get_repo(deployment_folder):
     if not os.path.exists(deployment_folder):
         try:
             repo = git.Repo.clone_from(GITHUB_ORG + '/' + slug, deployment_folder)
@@ -57,9 +55,46 @@ def deploy(slug):
             print("Repository not found or no permission")
             sys.exit(1)
     else:
-        repo = git.Repo(deployment_folder)
+        try:
+            repo = git.Repo(deployment_folder)
+            for remote in repo.remotes:
+                remote.fetch()
+        except Exception as e:
+            print(f"Failed to fetch from remote: {e}")
+            sys.exit(1)
+    return repo
 
+def get_ticket_information(instance, task_id):
+g
+        uid = instance.authenticate(ODOO_DB, ODOO_USER, ODOO_TOKEN, {})
+        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(ODOO_URL))
+        task = models.execute_kw(
+            ODOO_DB, uid, ODOO_TOKEN, 'project.task', 'read',
+            [[task_id], ['module_name', 'stage_id', 'type_id']]
+            )
+        if not task:
+            raise ValueError("Task not found")
+        task = task[0]
+        if task.get('type_id')[0] != DEPLOYMENT_TYPE:
+            raise ValueError("Not a deployment ticket")
+        if not task.get('module_name'):
+            raise ValueError("Modulename not provided")
+        return json.dumps(task, indent=4)
+    except Exception as e:
+        print(f"Failed to get task information: {e}")
+        sys.exit(1)
+
+@click.command()
+@click.argument('slug')
+@click.argument('ticketnumber', type=int)
+
+def deploy(slug, ticketnumber):
+    odoo_instance = get_odoo_connection(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN)
+    slug, deployment_folder = check_slug(slug)
+    repo = get_repo(deployment_folder)
     print(repo.git.status())
+    task = get_ticket_information(odoo_instance, ticketnumber)
+    print(task)
 
 if __name__ == '__main__':
     deploy()
