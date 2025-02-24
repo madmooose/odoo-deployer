@@ -18,6 +18,11 @@ ODOO_TOKEN = os.getenv("ODOO_TOKEN")
 DEPLOYMENT_TYPE = 14
 
 def get_odoo_connection(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN):
+    # TODO: Fetch db name when not provided
+    # db_serv_url = 'http://{}/xmlrpc/db'.format(host)
+    # sock = xmlrpclib.ServerProxy(db_serv_url)
+    # dbs = sock.list()
+    # print dbs
     try:
         client = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(ODOO_URL))
         client.version()  # Attempt to get the version to check the connection
@@ -65,24 +70,21 @@ def get_repo(deployment_folder):
     return repo
 
 def get_ticket_information(instance, task_id):
-g
-        uid = instance.authenticate(ODOO_DB, ODOO_USER, ODOO_TOKEN, {})
-        models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(ODOO_URL))
-        task = models.execute_kw(
-            ODOO_DB, uid, ODOO_TOKEN, 'project.task', 'read',
-            [[task_id], ['module_name', 'stage_id', 'type_id']]
-            )
-        if not task:
-            raise ValueError("Task not found")
-        task = task[0]
-        if task.get('type_id')[0] != DEPLOYMENT_TYPE:
-            raise ValueError("Not a deployment ticket")
-        if not task.get('module_name'):
-            raise ValueError("Modulename not provided")
-        return json.dumps(task, indent=4)
-    except Exception as e:
-        print(f"Failed to get task information: {e}")
-        sys.exit(1)
+    uid = instance.authenticate(ODOO_DB, ODOO_USER, ODOO_TOKEN, {})
+    models = xmlrpc.client.ServerProxy('{}/xmlrpc/2/object'.format(ODOO_URL))
+    task = models.execute_kw(
+        ODOO_DB, uid, ODOO_TOKEN, 'project.task', 'read',
+        [[task_id], ['module_name', 'stage_id', 'type_id']]
+        )
+    if not task:
+        raise ValueError("Task not found")
+    task = task[0]
+    if task.get('type_id')[0] != DEPLOYMENT_TYPE:
+        raise ValueError("Not a deployment ticket")
+    if not task.get('module_name'):
+        raise ValueError("Modulename not provided")
+    return json.dumps(task, indent=4)
+
 
 @click.command()
 @click.argument('slug')
