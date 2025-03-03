@@ -87,5 +87,11 @@ docs/_build/
 # OCA rules
 !static/lib/
 
+.env
+
 # Repo folder
 repos
+auto
+custom
+!custom/addons.yaml
+!custom/repos.yaml

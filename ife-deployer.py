@@ -2,20 +2,27 @@ import click
 from dotenv import load_dotenv
 import git
 import json
+from glob import iglob
 import os
 import re
 import sys
+import shutil
 import xmlrpc.client
+from lib import addons
 
 # Load environment variables from .env file
 load_dotenv()
 REPO_DIR = "./repos"
+CUSTOMER_REPO_DIR = "./auto/addons"
+SRC_DIR = "./custom/src"
 GITHUB_ORG = os.getenv("GITHUB_ORG")
 ODOO_URL = os.getenv("ODOO_URL")
 ODOO_DB = os.getenv("ODOO_DB")
 ODOO_USER = os.getenv("ODOO_USER")
 ODOO_TOKEN = os.getenv("ODOO_TOKEN")
+ODOO_VERSION = "18.0"
 DEPLOYMENT_TYPE = 14
+
 
 def get_odoo_connection(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN):
     # TODO: Fetch db name when not provided
@@ -86,7 +93,7 @@ def get_ticket_information(instance, task_id):
     return json.dumps(task, indent=4)
 
 
-@click.command()
+@click.command('ticket')
 @click.argument('slug')
 @click.argument('ticketnumber', type=int)
 
@@ -98,5 +105,16 @@ def deploy(slug, ticketnumber):
     task = get_ticket_information(odoo_instance, ticketnumber)
     print(task)
 
+@click.command('generate')
+def generate_addons_folder():
+    for module in iglob(os.path.join(CUSTOMER_REPO_DIR, "*")):
+        shutil.rmtree(module)
+    for addon, repo in addons.addons_config():
+        src = os.path.join(SRC_DIR, repo, addon)
+        dst = os.path.join(CUSTOMER_REPO_DIR, addon)
+        shutil.copytree(src, dst)
+        print(f"Copied {src} to {dst}")
+
+
 if __name__ == '__main__':
-    deploy()
+    generate_addons_folder()
