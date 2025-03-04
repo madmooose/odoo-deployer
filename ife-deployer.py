@@ -111,7 +111,7 @@ def generate_addons_folder():
         shutil.rmtree(module)
     for addon, repo in addons.addons_config():
         src = os.path.join(SRC_DIR, repo, addon)
-        dst = os.path.join(CUSTOMER_REPO_DIR, addon)
+        dst = os.path.join(CUSTOMER_REPO_DIR, repo, addon)
         shutil.copytree(src, dst)
         print(f"Copied {src} to {dst}")
 
