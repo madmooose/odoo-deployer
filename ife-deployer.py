@@ -12,15 +12,11 @@ from lib import addons
 
 # Load environment variables from .env file
 load_dotenv()
-REPO_DIR = "./repos"
-CUSTOMER_REPO_DIR = "./auto/addons"
-SRC_DIR = "./custom/src"
 GITHUB_ORG = os.getenv("GITHUB_ORG")
 ODOO_URL = os.getenv("ODOO_URL")
 ODOO_DB = os.getenv("ODOO_DB")
 ODOO_USER = os.getenv("ODOO_USER")
 ODOO_TOKEN = os.getenv("ODOO_TOKEN")
-ODOO_VERSION = "18.0"
 DEPLOYMENT_TYPE = 14
 
 
@@ -92,8 +88,11 @@ def get_ticket_information(instance, task_id):
         raise ValueError("Modulename not provided")
     return json.dumps(task, indent=4)
 
+@click.group()
+def cli():
+    pass
 
-@click.command('ticket')
+@cli.command()
 @click.argument('slug')
 @click.argument('ticketnumber', type=int)
 
@@ -105,16 +104,27 @@ def deploy(slug, ticketnumber):
     task = get_ticket_information(odoo_instance, ticketnumber)
     print(task)
 
-@click.command('generate')
-def generate_addons_folder():
-    for module in iglob(os.path.join(CUSTOMER_REPO_DIR, "*")):
-        shutil.rmtree(module)
-    for addon, repo in addons.addons_config():
-        src = os.path.join(SRC_DIR, repo, addon)
-        dst = os.path.join(CUSTOMER_REPO_DIR, repo, addon)
+@cli.command("init")
+@click.argument('customer')
+def init_customer_folders(customer):
+    customer = addons.Addons(slug=customer, init=True)
+
+@cli.command("generate")
+@click.argument('customer')
+def generate_addons_folder(customer):
+    customer = addons.Addons(slug=customer)
+    for addon in iglob(os.path.join(customer.addons_dir, "*")):
+        if os.path.isdir(addon):
+            shutil.rmtree(addon)
+    for addon, repo in customer.addons_list(strict=True):
+        src = os.path.join(customer.src_dir, repo, addon)
+        dst = os.path.join(customer.addons_dir, repo, addon)
         shutil.copytree(src, dst)
         print(f"Copied {src} to {dst}")
 
+cli.add_command(deploy)
+cli.add_command(init_customer_folders)
+cli.add_command(generate_addons_folder)
 
 if __name__ == '__main__':
-    generate_addons_folder()
+    cli()

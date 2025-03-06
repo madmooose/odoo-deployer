@@ -90,8 +90,5 @@ docs/_build/
 .env
 
 # Repo folder
-repos
-auto
-custom
-!custom/addons.yaml
-!custom/repos.yaml
+projects
+data
