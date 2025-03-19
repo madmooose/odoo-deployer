@@ -1,3 +1,4 @@
 click
 gitpython
 pyyaml
+dotenv
