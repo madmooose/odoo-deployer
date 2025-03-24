@@ -12,16 +12,17 @@ from ruamel.yaml.comments import CommentedSeq, CommentedMap
 import xmlrpc.client
 from glob import iglob
 from dotenv import load_dotenv
-from lib import addons  
+from lib import addons
 
 load_dotenv()
+GITHUB_URL = os.getenv("GITHUB_URL")
 GITHUB_ORG = os.getenv("GITHUB_ORG")
 ODOO_URL = os.getenv("ODOO_URL")
 ODOO_DB = os.getenv("ODOO_DB")
 ODOO_USER = os.getenv("ODOO_USER")
 ODOO_TOKEN = os.getenv("ODOO_TOKEN")
 
-STAGE_ID = 2
+STAGE_ID = 9
 TYPE_ID = 2
 
 class OdooClient:
@@ -53,10 +54,10 @@ class OdooClient:
     def get_task(self, task_id):
         """Retrieve task details from Odoo using the task ID."""
         required_fields = [
-            'type_id', 'stage_id', 'ife_repository', 'module_name', 
+            'type_id', 'stage_id', 'ife_repository', 'module_name',
             'odoo_version_id', 'hosting', 'customer_repository'
         ]
-        
+
         try:
             task = self.models.execute_kw(
                 self.db, self.uid, self.token, 'project.task', 'read',
@@ -72,7 +73,7 @@ class OdooClient:
             missing_fields = [field for field in required_fields if not task_data.get(field)]
             if missing_fields:
                 errors.append(f"Missing required fields: {', '.join(missing_fields)}")
-            
+
             if task_data.get('type_id') and task_data.get('type_id')[0] != TYPE_ID:
                 errors.append(f"Invalid type_id: {task_data.get('type_id')[1]}. Expected Development.")
 
@@ -84,7 +85,7 @@ class OdooClient:
 
             if errors:
                 raise ValueError("\n".join(errors))
-            
+
             return task_data
 
         except Exception as e:
@@ -115,29 +116,32 @@ class GitHandler:
             except Exception as e:
                 print(f"❌ Failed to fetch repository updates: {e}")
                 sys.exit(1)
-        
+
         return repo
-    
+
     def get_default_branch(self, repo):
-        """Get the default branch of the repository."""
+        """Get the default branch of the repository.
+           Todo: Check if we go with static production branch naming or config.yaml values.
+           Probably later one.
+        """
         try:
-            default_branch_names = ['refs/heads/main', 'refs/heads/master']
+            default_branch_names = ['refs/heads/live', 'refs/heads/main', 'refs/heads/master']
 
             repo.remotes.origin.fetch()
             remote_branches = [line.split()[1] for line in repo.git.ls_remote('--heads', 'origin').splitlines()]
-            
+
             for branch in default_branch_names:
                 if branch in remote_branches:
                     return repo.remotes.origin.refs[branch.split('/')[2]]
-            
+
             if remote_branches:
                 default_branch = remote_branches[0].split('/')[-1]
                 return repo.remotes.origin.refs[default_branch]
-            
+
         except git.exc.GitCommandError as e:
             print(f"❌ Error: {e}")
             sys.exit(1)
-        
+
         print("❌ No remote branches found.")
         sys.exit(1)
 
@@ -215,52 +219,62 @@ def task(task_id):
 
     task_vals = odoo_client.get_task(task_id)
 
-    ife_repository = task_vals['ife_repository']
-    repo_name = ife_repository.split('/')[-1]
-    github_user_name = ife_repository.split('/')[-2]
-    full_repo_name = f"{github_user_name}/{repo_name}"
-    remote_repo = f"git@github.com:{full_repo_name}.git"
-    customer_dir = os.path.join(addons.PROJECT_DIR, repo_name)
+    module_repository = task_vals['ife_repository']
+    customer_repository = task_vals['customer_repository']
+    customer_repo_name = customer_repository.split('/')[-1]
+    module_repo_name = module_repository.split('/')[-1]
+    module_organisation = module_repository.split('/')[-2]
+    module_full_repo_name = f"{module_organisation}/{module_repo_name}"
+    module_repo_url = f"{GITHUB_URL}:{module_full_repo_name}.git"
+    odoo_version = task_vals['odoo_version_id'][1]
+    # TODO: Use project key here
+    customer_dir = os.path.join(addons.PROJECT_DIR, customer_repo_name)
 
     if not os.path.exists(customer_dir):
         addons.Addons(slug=repo_name, init=True)
         print(f"📂 Created deployment folder: {customer_dir}")
 
+    feature_branch_name = f"{task_vals['id']}-{task_vals['odoo_version_id'][1]}-{task_vals['module_name']}"
+    # Create feature branch in config repo
+    config_repo = git_handler.get_repo(customer_repo_name, os.path.join(customer_dir, addons.CONFIG_DIR))
+    new_config_branch = config_repo.create_head(feature_branch_name, odoo_version)
+    new_config_branch.checkout()
+    config_repo.git.push('origin', feature_branch_name)
+
     # Handle addons.yaml update
     addons_yaml_path = os.path.join(customer_dir, "config", "addons.yaml")
-    yaml_handler.update_yaml(addons_yaml_path, full_repo_name, task_vals['module_name'], task_vals['id'])
+    yaml_handler.update_yaml(addons_yaml_path, module_full_repo_name, task_vals['module_name'], task_vals['id'])
 
     # Handle repos.yaml update
-    repos_yaml_path = os.path.join(customer_dir, "config", "repos.yaml")
+    repos_yaml_path = os.path.abspath(os.path.join(customer_dir, "config", "repos.yaml"))
     new_entry = {
         "defaults": {"depth": 1},
-        "remotes": {github_user_name: remote_repo},
-        "merges": ["ife 16.0"]
+        "remotes": {module_organisation: module_repo_url},
+        "merges": [f"{module_organisation} {odoo_version}"]
     }
-    yaml_handler.update_yaml(repos_yaml_path, full_repo_name, new_entry, task_vals['id'], is_addons=False)
+    yaml_handler.update_yaml(repos_yaml_path, module_full_repo_name, new_entry, task_vals['id'], is_addons=False)
 
-    return
     try:
         check_call(
             ["gitaggregate", "-c", repos_yaml_path, "aggregate"],
+            cwd=addons.SRC_DIR,
             stderr=sys.stderr,
             stdout=sys.stdout
         )
-        print(f"✅ Successfully ran gitaggregate for {repo_name}")
+        print(f"✅ Successfully ran gitaggregate for {customer_repo_name}")
     except subprocess.CalledProcessError as e:
         print(f"❌ Error occurred while running gitaggregate: {e}")
 
     print(f"✅ Task {task_id} processed successfully")
 
-    repo = git_handler.get_repo(repo_name, customer_dir)
-    main_branch = git_handler.get_default_branch(repo)
+    # Create feature branch in deployment repo
+    deployment_repo = git_handler.get_repo(customer_repo_name, os.path.join(customer_dir, addons.ADDONS_DIR))
+    deployment_main_branch = git_handler.get_default_branch(deployment_repo)
+    new_deployment_branch = deployment_repo.create_head(feature_branch_name, deployment_main_branch.commit)
+    new_deployment_branch.checkout()
+    deployment_repo.git.push('origin', feature_branch_name)
 
-    feature_branch_name = f"{task_vals['id']}-{task_vals['odoo_version_id'][1]}-{task_vals['module_name']}"
-    new_branch = repo.create_head(feature_branch_name, main_branch.commit)
-    new_branch.checkout()
-    repo.git.push('origin', feature_branch_name)
-
-    print(f"✅ Created and pushed new feature branch: {feature_branch_name} based on {main_branch}")
+    print(f"✅ Created and pushed new feature branch: {feature_branch_name} based on {deployment_main_branch}")
 
 def generate_addons_folder(customer):
     """Generate addon folders by copying from the source."""

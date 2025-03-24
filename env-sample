@@ -1,4 +1,5 @@
-GITHUB_ORG=github.com:ifegmbh
+GITHUB_URL=git@github.com
+GITHUB_ORG=git@github.com:company
 ODOO_URL=https://odoo
 ODOO_DB=odoo
 ODOO_USER=user
