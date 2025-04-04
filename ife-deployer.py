@@ -14,16 +14,15 @@ from glob import iglob
 from dotenv import load_dotenv
 from lib import addons
 
-load_dotenv()
+load_dotenv(override=True)
 GITHUB_URL = os.getenv("GITHUB_URL")
 GITHUB_ORG = os.getenv("GITHUB_ORG")
 ODOO_URL = os.getenv("ODOO_URL")
 ODOO_DB = os.getenv("ODOO_DB")
 ODOO_USER = os.getenv("ODOO_USER")
 ODOO_TOKEN = os.getenv("ODOO_TOKEN")
-
-STAGE_ID = 9
-TYPE_ID = 2
+ODOO_STAGE_ACKNOWLEDGE = int(os.getenv("ODOO_STAGE_ACKNOWLEDGE"))
+ODOO_TYPE_DEPLOYMENT = int(os.getenv("ODOO_TYPE_DEPLOYMENT"))
 
 class OdooClient:
     """Handles connection and interactions with Odoo through XML-RPC."""
@@ -54,7 +53,7 @@ class OdooClient:
     def get_task(self, task_id):
         """Retrieve task details from Odoo using the task ID."""
         required_fields = [
-            'type_id', 'stage_id', 'ife_repository', 'module_name',
+            'type_id', 'stage_id', 'key', 'ife_repository', 'module_name',
             'odoo_version_id', 'hosting', 'customer_repository'
         ]
 
@@ -74,10 +73,10 @@ class OdooClient:
             if missing_fields:
                 errors.append(f"Missing required fields: {', '.join(missing_fields)}")
 
-            if task_data.get('type_id') and task_data.get('type_id')[0] != TYPE_ID:
-                errors.append(f"Invalid type_id: {task_data.get('type_id')[1]}. Expected Development.")
+            if task_data.get('type_id') and task_data.get('type_id')[0] != ODOO_TYPE_DEPLOYMENT:
+                errors.append(f"Invalid type_id: {task_data.get('type_id')[1]}. Expected Deployment.")
 
-            if task_data.get('stage_id') and task_data.get('stage_id')[0] != STAGE_ID:
+            if task_data.get('stage_id') and task_data.get('stage_id')[0] != ODOO_STAGE_ACKNOWLEDGE:
                 errors.append(f"Invalid stage_id: {task_data.get('stage_id')[1]}. Expected Acknowledge.")
 
             if task_data.get('hosting') != 'odoo_sh':
@@ -144,6 +143,27 @@ class GitHandler:
 
         print("❌ No remote branches found.")
         sys.exit(1)
+
+    def create_feature_branch(self, repo, base_branch, branch_name, description):
+        """Create a new feature branch based on the specified base branch."""
+        try:
+            repo.heads[base_branch].checkout()
+            if repo.is_dirty():
+                print("❌ {description} Repository is dirty. Please commit or stash changes.")
+                sys.exit(1)
+            if branch_name in repo.heads:
+                print(f"🔄 {description} branch '{branch_name}' already exists. Deleting it.")
+                repo.delete_head(branch_name, force=True)
+                repo.git.push('origin', '--delete', branch_name)
+
+            new_branch = repo.create_head(branch_name, base_branch)
+            new_branch.checkout()
+            repo.git.push('origin', branch_name)
+            print(f"✅ Created and pushed new {description} branch: {branch_name} based on {base_branch}")
+        except Exception as e:
+            print(f"❌ Error creating feature branch: {e}")
+            sys.exit(1)
+        return new_branch
 
 class YAMLHandler:
     """Handles YAML file operations for addons and repos."""
@@ -221,14 +241,18 @@ def task(task_id):
 
     module_repository = task_vals['ife_repository']
     customer_repository = task_vals['customer_repository']
-    customer_repo_name = customer_repository.split('/')[-1]
+    customer_repo_name = task_vals['key']
     module_repo_name = module_repository.split('/')[-1]
     module_organisation = module_repository.split('/')[-2]
     module_full_repo_name = f"{module_organisation}/{module_repo_name}"
     module_repo_url = f"{GITHUB_URL}:{module_full_repo_name}.git"
     odoo_version = task_vals['odoo_version_id'][1]
-    # TODO: Use project key here
     customer_dir = os.path.join(addons.PROJECT_DIR, customer_repo_name)
+    if module_organisation == "ifegmbh":
+        if module_repo_name == "3rd-party":
+            module_full_repo_name = "3rd-party"
+        else:
+            module_full_repo_name = f"ife/{module_repo_name}"
 
     if not os.path.exists(customer_dir):
         addons.Addons(slug=repo_name, init=True)
@@ -237,9 +261,9 @@ def task(task_id):
     feature_branch_name = f"{task_vals['id']}-{task_vals['odoo_version_id'][1]}-{task_vals['module_name']}"
     # Create feature branch in config repo
     config_repo = git_handler.get_repo(customer_repo_name, os.path.join(customer_dir, addons.CONFIG_DIR))
-    new_config_branch = config_repo.create_head(feature_branch_name, odoo_version)
-    new_config_branch.checkout()
-    config_repo.git.push('origin', feature_branch_name)
+    new_config_branch = git_handler.create_feature_branch(
+        config_repo, odoo_version, feature_branch_name, "Config"
+    )
 
     # Handle addons.yaml update
     addons_yaml_path = os.path.join(customer_dir, "config", "addons.yaml")
@@ -253,28 +277,27 @@ def task(task_id):
         "merges": [f"{module_organisation} {odoo_version}"]
     }
     yaml_handler.update_yaml(repos_yaml_path, module_full_repo_name, new_entry, task_vals['id'], is_addons=False)
+    # TODO: Commit and push changes to config repo
+    # config_repo.git.add([addons_yaml_path, repos_yaml_path])
+    # try:
+    #     check_call(
+    #         ["gitaggregate", "-c", repos_yaml_path, "aggregate"],
+    #         cwd=addons.SRC_DIR,
+    #         stderr=sys.stderr,
+    #         stdout=sys.stdout
+    #     )
+    #     print(f"✅ Successfully ran gitaggregate for {customer_repo_name}")
+    # except subprocess.CalledProcessError as e:
+    #     print(f"❌ Error occurred while running gitaggregate: {e}")
 
-    try:
-        check_call(
-            ["gitaggregate", "-c", repos_yaml_path, "aggregate"],
-            cwd=addons.SRC_DIR,
-            stderr=sys.stderr,
-            stdout=sys.stdout
-        )
-        print(f"✅ Successfully ran gitaggregate for {customer_repo_name}")
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Error occurred while running gitaggregate: {e}")
-
-    print(f"✅ Task {task_id} processed successfully")
+    # print(f"✅ Task {task_id} processed successfully")
 
     # Create feature branch in deployment repo
     deployment_repo = git_handler.get_repo(customer_repo_name, os.path.join(customer_dir, addons.ADDONS_DIR))
     deployment_main_branch = git_handler.get_default_branch(deployment_repo)
-    new_deployment_branch = deployment_repo.create_head(feature_branch_name, deployment_main_branch.commit)
-    new_deployment_branch.checkout()
-    deployment_repo.git.push('origin', feature_branch_name)
-
-    print(f"✅ Created and pushed new feature branch: {feature_branch_name} based on {deployment_main_branch}")
+    new_deployment_branch = git_handler.create_feature_branch(
+        deployment_repo, deployment_main_branch, feature_branch_name, "Deployment"
+    )
 
 def generate_addons_folder(customer):
     """Generate addon folders by copying from the source."""
