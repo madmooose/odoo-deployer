@@ -131,11 +131,16 @@ class GitHandler:
 
             for branch in default_branch_names:
                 if branch in remote_branches:
-                    return repo.remotes.origin.refs[branch.split('/')[2]]
+                    repo.git.checkout(branch)
+                    repo.git.pull('origin', branch)
+                    return branch.split('/')[2]
 
-            if remote_branches:
-                default_branch = remote_branches[0].split('/')[-1]
-                return repo.remotes.origin.refs[default_branch]
+
+            # TODO: Find a proper why to get the default branch from GitHub
+            # if remote_branches:
+            #     default_branch = remote_branches[0].split('/')[-1]
+            #     return repo.remotes.origin.refs[default_branch]
+            raise ValueError("No default branch found")
 
         except git.exc.GitCommandError as e:
             print(f"❌ Error: {e}")
@@ -149,21 +154,39 @@ class GitHandler:
         try:
             repo.heads[base_branch].checkout()
             if repo.is_dirty():
-                print("❌ {description} Repository is dirty. Please commit or stash changes.")
+                print(f"❌ {description} Repository is dirty. Please commit or stash changes.")
                 sys.exit(1)
             if branch_name in repo.heads:
                 print(f"🔄 {description} branch '{branch_name}' already exists. Deleting it.")
                 repo.delete_head(branch_name, force=True)
-                repo.git.push('origin', '--delete', branch_name)
+
 
             new_branch = repo.create_head(branch_name, base_branch)
             new_branch.checkout()
-            repo.git.push('origin', branch_name)
+            repo.git.push('origin', '--force', branch_name)
             print(f"✅ Created and pushed new {description} branch: {branch_name} based on {base_branch}")
         except Exception as e:
             print(f"❌ Error creating feature branch: {e}")
             sys.exit(1)
         return new_branch
+
+    def push(self, repo, task_vals, state, files):
+        """Push changes to the remote repository."""
+        try:
+            if files:
+                repo.git.add(files)
+            else:
+                repo.git.add('.')
+            if state == "added":
+                commit_message = f"[{task_vals['id']}][ADD] {task_vals['module_name']}"
+            else:
+                commit_message = f"[{task_vals['id']}][UPDATE] {task_vals['module_name']}"
+            repo.git.commit('-m', commit_message)
+            repo.git.push('origin', repo.active_branch.name)
+            print(f"✅ Pushed changes to {repo.active_branch.name} branch")
+        except Exception as e:
+            print(f"❌ Error pushing changes: {e}")
+            sys.exit(1)
 
 class YAMLHandler:
     """Handles YAML file operations for addons and repos."""
@@ -189,6 +212,7 @@ class YAMLHandler:
 
     def update_addons_yaml(self, file_path, existing_data, repo_name, new_entry, task_id):
         """Update addons.yaml with a new module or entry."""
+        state = "unknown"
         if repo_name in existing_data:
             modules = existing_data[repo_name]
         else:
@@ -201,14 +225,18 @@ class YAMLHandler:
         if new_entry not in modules:
             modules.append(new_entry)
             modules.yaml_add_eol_comment(f"Added from task {task_id}", len(modules) - 1)
+            state = "added"
             print(f"📄 Added '{new_entry}' to addons.yaml at {file_path}")
         else:
             index = modules.index(new_entry)
             modules.yaml_add_eol_comment(f"Updated with task {task_id}", index)
+            state = "updated"
             print(f"📄 Updated comment for '{new_entry}' in addons.yaml at {file_path}")
 
         with open(file_path, 'w') as file:
             self.yaml.dump(existing_data, file)
+
+        return state
 
     def update_repos_yaml(self, file_path, existing_data, repo_name, new_entry, task_id):
         """Update repos.yaml with a new repository."""
@@ -266,8 +294,8 @@ def task(task_id):
     )
 
     # Handle addons.yaml update
-    addons_yaml_path = os.path.join(customer_dir, "config", "addons.yaml")
-    yaml_handler.update_yaml(addons_yaml_path, module_full_repo_name, task_vals['module_name'], task_vals['id'])
+    addons_yaml_path = os.path.abspath(os.path.join(customer_dir, "config", "addons.yaml"))
+    addons_state = yaml_handler.update_yaml(addons_yaml_path, module_full_repo_name, task_vals['module_name'], task_vals['id'])
 
     # Handle repos.yaml update
     repos_yaml_path = os.path.abspath(os.path.join(customer_dir, "config", "repos.yaml"))
@@ -277,7 +305,8 @@ def task(task_id):
         "merges": [f"{module_organisation} {odoo_version}"]
     }
     yaml_handler.update_yaml(repos_yaml_path, module_full_repo_name, new_entry, task_vals['id'], is_addons=False)
-    # TODO: Commit and push changes to config repo
+    git_handler.push(config_repo, task_vals, addons_state, [addons_yaml_path, repos_yaml_path])
+
     # config_repo.git.add([addons_yaml_path, repos_yaml_path])
     # try:
     #     check_call(
