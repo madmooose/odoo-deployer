@@ -330,15 +330,6 @@ def generate_addons_folder(task_vals, repo_name, git_handler):
         if os.path.isdir(addon):
             shutil.rmtree(addon)
 
-    # Copy addons to target directory
-    for addon, repo in customer_instance.addons_list(strict=True, odoo_version=odoo_version):
-        src = os.path.join(customer_instance.src_dir, repo, addon)
-        dst = os.path.join(customer_instance.addons_dir, repo, addon)
-        shutil.copytree(src, dst)
-        print(f"📁 Copied {src} to {dst}")
-
-    print(f"✅ Addon folders generated for {customer_slug}")
-
     customer_dir = os.path.join(addons.PROJECT_DIR, customer_slug)
     addons_yaml_path = os.path.abspath(os.path.join(customer_dir, "config", "addons.yaml"))
     repos_yaml_path = os.path.abspath(os.path.join(customer_dir, "config", "repos.yaml"))
@@ -346,9 +337,9 @@ def generate_addons_folder(task_vals, repo_name, git_handler):
     config_repo = git_handler.get_repo(customer_slug, os.path.join(customer_dir, addons.CONFIG_DIR))
     config_repo.git.add([addons_yaml_path, repos_yaml_path])
     try:
-        command_args = ["gitaggregate", "-c", repos_yaml_path, "aggregate"]
+        command_args = ["gitaggregate", "-c", repos_yaml_path]
         if repo_name:
-            command_args = ["gitaggregate", "-c", repos_yaml_path, "aggregate", "-d", repo_name]
+            command_args += ["-d", repo_name]
         check_call(
             command_args,
             cwd=addons.SRC_DIR,
@@ -359,6 +350,16 @@ def generate_addons_folder(task_vals, repo_name, git_handler):
     except subprocess.CalledProcessError as e:
         print(f"❌ Error occurred while running gitaggregate: {e}")
 
+    # Copy addons to target directory
+    for addon, repo in customer_instance.addons_list(strict=True, odoo_version=odoo_version):
+        src = os.path.join(customer_instance.src_dir, repo, addon)
+        dst = os.path.join(customer_instance.addons_dir, repo, addon)
+        shutil.copytree(src, dst)
+        print(f"📁 Copied {src} to {dst}")
+
+    print(f"✅ Addon folders generated for {customer_slug}")
+
+
 @cli.command("init")
 @click.argument('customer')
 def init_customer_folders(customer):
@@ -368,8 +369,8 @@ def init_customer_folders(customer):
 
 @cli.command("generate")
 @click.argument('task_id', type=int, required=True)
-@click.argument('repo_name')
-def generate_addons_folder_click(task_id, repo_name=False):
+@click.option("-d", "--repo-name", default=None, help="Repository to limit generation")
+def generate_addons_folder_click(task_id, repo_name):
     git_handler = GitHandler(GITHUB_ORG)
     odoo_client = OdooClient(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN)
     task_vals = odoo_client.get_task(task_id)
