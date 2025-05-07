@@ -6,6 +6,7 @@ from pprint import pformat
 from subprocess import check_output
 
 import yaml
+import ast
 
 PROJECT_DIR = "projects"
 CONFIG_DIR = "config"
@@ -89,7 +90,20 @@ class Addons:
         else:
             raise FileNotFoundError("repos.yaml not found")
 
-    def addons_list(self, filtered=True, strict=False):
+    def extract_manifest_dict(self, path):
+        with open(path, encoding="utf-8") as f:
+            code = f.read()
+
+        try:
+            tree = ast.parse(code, filename=path, mode="exec")
+            for node in tree.body:
+                if isinstance(node, ast.Expr) and isinstance(node.value, ast.Dict):
+                    return ast.literal_eval(node.value)
+            raise ValueError("No dictionary found at top level in manifest")
+        except Exception as e:
+            raise ValueError(f"Cannot extract manifest dictionary: {e}")
+
+    def addons_list(self, filtered=True, strict=False, odoo_version=False):
         """Yield addon name and path from ``ADDONS_YAML``.
 
         :param bool filtered:
@@ -168,21 +182,66 @@ class Addons:
                 error += ["Addons without manifest:", pformat(missing_manifest)]
             if error:
                 raise AddonsConfigError("\n".join(error), missing_glob, missing_manifest)
+            
         logger.debug("Resulting configuration after expanding: %r", config)
+        # Check for missing dependencies
+
+        odoo_version = odoo_version.split(".")[0]
+        odoo_modules_file = os.path.join(os.path.dirname(__file__), f"odoo{odoo_version}_modules.txt")
+        standard_modules = set()
+        if os.path.isfile(odoo_modules_file):
+            with open(odoo_modules_file, "r", encoding="utf-8") as f:
+                standard_modules = {line.strip() for line in f if line.strip()}
+        else:
+            logger.warning("Missing odoo16_modules.txt – skipping standard module check")
+
+        addon_names = set(str(k).strip() for k in config.keys())
+        standard_modules = set(str(line).strip() for line in standard_modules)
+        all_known = addon_names | standard_modules
+        missing_deps = {}
+
         for addon, repos in config.items():
-            # Private addons are most important
+            addon_path = os.path.join(SRC_DIR, next(iter(repos)), addon)
+            manifest_path = None
+            for mname in MANIFESTS:
+                mpath = os.path.join(addon_path, mname)
+                if os.path.isfile(mpath):
+                    manifest_path = mpath
+                    break
+            if not manifest_path:
+                continue
+
+            try:
+                manifest_data = self.extract_manifest_dict(manifest_path)
+                depends = manifest_data.get("depends", [])
+                logger.debug(f"Addon: {addon}, Dependencies: {depends}")
+                for dep in depends:
+                    if dep not in all_known:
+                        missing_deps.setdefault(addon, []).append(dep)
+            except Exception as e:
+                logger.warning(f"Failed to parse manifest {manifest_path}: {e}")
+
+        if missing_deps:
+            error_messages = []
+            for addon, deps in missing_deps.items():
+                error_messages.append(
+                    f" - Module '{addon}' has missing dependencies: {', '.join(deps)}"
+                )
+            print("\n❌ Missing module dependencies:\n" + "\n".join(error_messages) + "\n")
+            return
+        
+        # Final yield
+        for addon, repos in config.items():
             if PRIVATE in repos:
                 yield addon, PRIVATE
                 continue
-            # Odoo core addons are least important
             if repos == {CORE}:
                 yield addon, CORE
                 continue
             repos.discard(CORE)
-            # Other addons fall in between
             if filtered and len(repos) != 1:
                 raise AddonsConfigError(
-                    "Addon {} defined in several repos {}".format(addon, repos)
+                    f"Addon {addon} defined in multiple repos: {repos}"
                 )
             for repo in repos:
                 yield addon, repo

@@ -257,9 +257,12 @@ def cli():
     """CLI for managing Odoo module deployment."""
     pass
 
+# python ife-deployer.py create 123 --generate -d ife_project
 @cli.command()
-@click.argument('task_id', type=int)
-def task(task_id):
+@click.argument("task_id", type=int)
+@click.option("--generate", is_flag=True, help="Also run generate step after create")
+@click.option("-d", "--repo-name", default=None, help="Repository to limit generation")
+def create(task_id, generate, repo_name):
     """Deploy a module by fetching from GitHub and verifying with Odoo."""
     odoo_client = OdooClient(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN)
     git_handler = GitHandler(GITHUB_ORG)
@@ -268,7 +271,6 @@ def task(task_id):
     task_vals = odoo_client.get_task(task_id)
 
     module_repository = task_vals['ife_repository']
-    customer_repository = task_vals['customer_repository']
     customer_repo_name = task_vals['key']
     module_repo_name = module_repository.split('/')[-1]
     module_organisation = module_repository.split('/')[-2]
@@ -283,10 +285,10 @@ def task(task_id):
             module_full_repo_name = f"ife/{module_repo_name}"
 
     if not os.path.exists(customer_dir):
-        addons.Addons(slug=repo_name, init=True)
+        addons.Addons(slug=customer_repo_name, init=True)
         print(f"📂 Created deployment folder: {customer_dir}")
 
-    feature_branch_name = f"{task_vals['id']}-{task_vals['odoo_version_id'][1]}-{task_vals['module_name']}"
+    feature_branch_name = f"{task_vals['id']}-{odoo_version}-{task_vals['module_name']}"
     # Create feature branch in config repo
     config_repo = git_handler.get_repo(customer_repo_name, os.path.join(customer_dir, addons.CONFIG_DIR))
     new_config_branch = git_handler.create_feature_branch(
@@ -307,20 +309,6 @@ def task(task_id):
     yaml_handler.update_yaml(repos_yaml_path, module_full_repo_name, new_entry, task_vals['id'], is_addons=False)
     git_handler.push(config_repo, task_vals, addons_state, [addons_yaml_path, repos_yaml_path])
 
-    # config_repo.git.add([addons_yaml_path, repos_yaml_path])
-    # try:
-    #     check_call(
-    #         ["gitaggregate", "-c", repos_yaml_path, "aggregate"],
-    #         cwd=addons.SRC_DIR,
-    #         stderr=sys.stderr,
-    #         stdout=sys.stdout
-    #     )
-    #     print(f"✅ Successfully ran gitaggregate for {customer_repo_name}")
-    # except subprocess.CalledProcessError as e:
-    #     print(f"❌ Error occurred while running gitaggregate: {e}")
-
-    # print(f"✅ Task {task_id} processed successfully")
-
     # Create feature branch in deployment repo
     deployment_repo = git_handler.get_repo(customer_repo_name, os.path.join(customer_dir, addons.ADDONS_DIR))
     deployment_main_branch = git_handler.get_default_branch(deployment_repo)
@@ -328,9 +316,14 @@ def task(task_id):
         deployment_repo, deployment_main_branch, feature_branch_name, "Deployment"
     )
 
-def generate_addons_folder(customer):
+    if generate:
+        generate_addons_folder(task_vals, repo_name, git_handler)
+
+def generate_addons_folder(task_vals, repo_name, git_handler):
     """Generate addon folders by copying from the source."""
-    customer_instance = addons.Addons(slug=customer)
+    odoo_version = task_vals['odoo_version_id'][1]
+    customer_slug = task_vals['key']
+    customer_instance = addons.Addons(slug=customer_slug)
 
     # Remove old addon folders
     for addon in iglob(os.path.join(customer_instance.addons_dir, "*")):
@@ -338,13 +331,33 @@ def generate_addons_folder(customer):
             shutil.rmtree(addon)
 
     # Copy addons to target directory
-    for addon, repo in customer_instance.addons_list(strict=True):
+    for addon, repo in customer_instance.addons_list(strict=True, odoo_version=odoo_version):
         src = os.path.join(customer_instance.src_dir, repo, addon)
         dst = os.path.join(customer_instance.addons_dir, repo, addon)
         shutil.copytree(src, dst)
         print(f"📁 Copied {src} to {dst}")
 
-    print(f"✅ Addon folders generated for {customer}")
+    print(f"✅ Addon folders generated for {customer_slug}")
+
+    customer_dir = os.path.join(addons.PROJECT_DIR, customer_slug)
+    addons_yaml_path = os.path.abspath(os.path.join(customer_dir, "config", "addons.yaml"))
+    repos_yaml_path = os.path.abspath(os.path.join(customer_dir, "config", "repos.yaml"))
+
+    config_repo = git_handler.get_repo(customer_slug, os.path.join(customer_dir, addons.CONFIG_DIR))
+    config_repo.git.add([addons_yaml_path, repos_yaml_path])
+    try:
+        command_args = ["gitaggregate", "-c", repos_yaml_path, "aggregate"]
+        if repo_name:
+            command_args = ["gitaggregate", "-c", repos_yaml_path, "aggregate", "-d", repo_name]
+        check_call(
+            command_args,
+            cwd=addons.SRC_DIR,
+            stderr=sys.stderr,
+            stdout=sys.stdout
+        )
+        print(f"✅ Successfully ran gitaggregate for {customer_slug}")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error occurred while running gitaggregate: {e}")
 
 @cli.command("init")
 @click.argument('customer')
@@ -354,11 +367,15 @@ def init_customer_folders(customer):
     print(f"📂 Customer folders initialized for {customer}")
 
 @cli.command("generate")
-@click.argument('customer')
-def generate_addons_folder_click(customer):
-    generate_addons_folder(customer)
+@click.argument('task_id', type=int, required=True)
+@click.argument('repo_name')
+def generate_addons_folder_click(task_id, repo_name=False):
+    git_handler = GitHandler(GITHUB_ORG)
+    odoo_client = OdooClient(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN)
+    task_vals = odoo_client.get_task(task_id)
+    generate_addons_folder(task_vals, repo_name, git_handler)
 
-cli.add_command(task)
+cli.add_command(create)
 cli.add_command(init_customer_folders)
 cli.add_command(generate_addons_folder_click)
 
