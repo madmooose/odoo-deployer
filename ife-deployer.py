@@ -239,18 +239,25 @@ class YAMLHandler:
         return state
 
     def update_repos_yaml(self, file_path, existing_data, repo_name, new_entry, task_id):
-        """Update repos.yaml with a new repository."""
+        """Update repos.yaml with a new repository if it doesn't exist already."""
+        changed = False
+
         if not isinstance(existing_data, CommentedMap):
             existing_data = CommentedMap(existing_data)
 
-        if not repo_name in existing_data:
+        if repo_name not in existing_data:
             existing_data[repo_name] = new_entry
             print(f"📄 Added '{repo_name}' to repos.yaml at {file_path}")
             new_comment = f"Added from task {task_id}"
             existing_data.yaml_add_eol_comment(new_comment, repo_name)
+            changed = True
 
-        with open(file_path, 'w') as file:
-            self.yaml.dump(existing_data, file)
+        if changed:
+            with open(file_path, 'w') as file:
+                self.yaml.dump(existing_data, file)
+
+        return changed
+
 
 @click.group()
 def cli():
