@@ -378,16 +378,17 @@ def clean(task_id):
 
     customer_repo_name = task_vals['key']
     customer_dir = os.path.join(addons.PROJECT_DIR, customer_repo_name)
-    deployment_path = os.path.join(customer_dir, addons.ADDONS_DIR)
+    config_path = os.path.join(customer_dir, addons.CONFIG_DIR)
 
     try:
-        repo = git.Repo(deployment_path)
-        print(f"🧹 Cleaning repo at {deployment_path}...")
+        # TODO: add deployment_path and for loop for both
+        repo = git.Repo(config_path)
+        print(f"🧹 Cleaning repo at {config_path}...")
 
         repo.git.reset('--hard')
         repo.git.clean('-fd')
 
-        print("✅ Git working directory cleaned.")
+        print("✅ Git config directory cleaned.")
     except git.exc.InvalidGitRepositoryError:
         print(f"❌ {deployment_path} is not a valid Git repository.")
         sys.exit(1)
