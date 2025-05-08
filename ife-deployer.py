@@ -246,7 +246,7 @@ class YAMLHandler:
             existing_data = CommentedMap(existing_data)
 
         if repo_name[0] != ".":
-            repo_name = f".{repo_name}"
+            repo_name = f"./{repo_name}"
 
         if repo_name not in existing_data:
             existing_data[repo_name] = new_entry
@@ -369,6 +369,31 @@ def generate_addons_folder(task_vals, repo_name, git_handler):
 
     print(f"✅ Addon folders generated for {customer_slug}")
 
+@cli.command("clean")
+@click.argument("task_id", type=int)
+def clean(task_id):
+    """Discard all changes and untracked files for a specific task's repo."""
+    odoo_client = OdooClient(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN)
+    task_vals = odoo_client.get_task(task_id)
+
+    customer_repo_name = task_vals['key']
+    customer_dir = os.path.join(addons.PROJECT_DIR, customer_repo_name)
+    deployment_path = os.path.join(customer_dir, addons.ADDONS_DIR)
+
+    try:
+        repo = git.Repo(deployment_path)
+        print(f"🧹 Cleaning repo at {deployment_path}...")
+
+        repo.git.reset('--hard')
+        repo.git.clean('-fd')
+
+        print("✅ Git working directory cleaned.")
+    except git.exc.InvalidGitRepositoryError:
+        print(f"❌ {deployment_path} is not a valid Git repository.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Error while cleaning the repo: {e}")
+        sys.exit(1)
 
 @cli.command("init")
 @click.argument('customer')
@@ -387,6 +412,7 @@ def generate_addons_folder_click(task_id, repo_name):
     generate_addons_folder(task_vals, repo_name, git_handler)
 
 cli.add_command(create)
+cli.add_command(clean)
 cli.add_command(init_customer_folders)
 cli.add_command(generate_addons_folder_click)
 
