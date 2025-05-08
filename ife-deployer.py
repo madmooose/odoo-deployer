@@ -372,29 +372,32 @@ def generate_addons_folder(task_vals, repo_name, git_handler):
 @cli.command("clean")
 @click.argument("task_id", type=int)
 def clean(task_id):
-    """Discard all changes and untracked files for a specific task's repo."""
+    """Discard all changes and untracked files in both config and addons repos for a specific task."""
     odoo_client = OdooClient(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN)
     task_vals = odoo_client.get_task(task_id)
 
     customer_repo_name = task_vals['key']
     customer_dir = os.path.join(addons.PROJECT_DIR, customer_repo_name)
-    config_path = os.path.join(customer_dir, addons.CONFIG_DIR)
+    repo_paths = {
+        "Config": os.path.join(customer_dir, addons.CONFIG_DIR),
+        "Addons": os.path.join(customer_dir, addons.ADDONS_DIR)
+    }
 
-    try:
-        # TODO: add deployment_path and for loop for both
-        repo = git.Repo(config_path)
-        print(f"🧹 Cleaning repo at {config_path}...")
+    for name, path in repo_paths.items():
+        try:
+            repo = git.Repo(path)
+            print(f"🧹 Cleaning {name} repo at {path}...")
 
-        repo.git.reset('--hard')
-        repo.git.clean('-fd')
+            repo.git.reset('--hard')
+            repo.git.clean('-fd')
 
-        print("✅ Git config directory cleaned.")
-    except git.exc.InvalidGitRepositoryError:
-        print(f"❌ {deployment_path} is not a valid Git repository.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"❌ Error while cleaning the repo: {e}")
-        sys.exit(1)
+            print(f"✅ {name} directory cleaned.")
+        except git.exc.InvalidGitRepositoryError:
+            print(f"❌ {path} is not a valid Git repository.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Error while cleaning the {name} repo: {e}")
+            sys.exit(1)
 
 @cli.command("init")
 @click.argument('customer')
