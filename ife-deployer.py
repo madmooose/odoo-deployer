@@ -245,6 +245,9 @@ class YAMLHandler:
         if not isinstance(existing_data, CommentedMap):
             existing_data = CommentedMap(existing_data)
 
+        if repo_name[0] != ".":
+            repo_name = f".{repo_name}"
+
         if repo_name not in existing_data:
             existing_data[repo_name] = new_entry
             print(f"📄 Added '{repo_name}' to repos.yaml at {file_path}")
