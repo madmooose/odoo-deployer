@@ -1,16 +1,14 @@
-# -*- coding: utf-8 -*-
 import logging
 import os
 from glob import glob
 from pprint import pformat
-from subprocess import check_output
 
 import yaml
 import ast
 
 PROJECT_DIR = "projects"
 CONFIG_DIR = "config"
-ADDONS_DIR =  "addons"
+ADDONS_DIR = "addons"
 DATA_DIR = "data"
 SRC_DIR = os.path.join(DATA_DIR, "src")
 CLEAN = os.environ.get("CLEAN") == "true"
@@ -130,7 +128,8 @@ class Addons:
                         doc.setdefault(CORE, ["*"])
                         doc.setdefault(PRIVATE, ["*"])
                     elif any(
-                        os.environ.get(key) not in values for key, values in only.items()
+                        os.environ.get(key) not in values
+                        for key, values in only.items()
                     ):
                         logger.debug("Skipping section with ONLY %s", only)
                         continue
@@ -166,7 +165,7 @@ class Addons:
                     if not any(os.path.isfile(m) for m in manifests):
                         missing_manifest.add(addon)
                         logger.debug(
-                            "Skipping '%s' as it is not a valid Odoo " "module", addon
+                            "Skipping '%s' as it is not a valid Odoo module", addon
                         )
                         continue
                     logger.debug("Registering addon %s", addon)
@@ -181,19 +180,25 @@ class Addons:
             if missing_manifest:
                 error += ["Addons without manifest:", pformat(missing_manifest)]
             if error:
-                raise AddonsConfigError("\n".join(error), missing_glob, missing_manifest)
-            
+                raise AddonsConfigError(
+                    "\n".join(error), missing_glob, missing_manifest
+                )
+
         logger.debug("Resulting configuration after expanding: %r", config)
         # Check for missing dependencies
 
         odoo_version = odoo_version.split(".")[0]
-        odoo_modules_file = os.path.join(os.path.dirname(__file__), f"odoo{odoo_version}_modules.txt")
+        odoo_modules_file = os.path.join(
+            os.path.dirname(__file__), f"odoo{odoo_version}_modules.txt"
+        )
         standard_modules = set()
         if os.path.isfile(odoo_modules_file):
             with open(odoo_modules_file, "r", encoding="utf-8") as f:
                 standard_modules = {line.strip() for line in f if line.strip()}
         else:
-            logger.warning("Missing odoo16_modules.txt – skipping standard module check")
+            logger.warning(
+                "Missing odoo16_modules.txt – skipping standard module check"
+            )
 
         addon_names = set(str(k).strip() for k in config.keys())
         standard_modules = set(str(line).strip() for line in standard_modules)
@@ -227,9 +232,11 @@ class Addons:
                 error_messages.append(
                     f" - Module '{addon}' has missing dependencies: {', '.join(deps)}"
                 )
-            print("\n❌ Missing module dependencies:\n" + "\n".join(error_messages) + "\n")
+            print(
+                "\n❌ Missing module dependencies:\n" + "\n".join(error_messages) + "\n"
+            )
             return
-        
+
         # Final yield
         for addon, repos in config.items():
             if PRIVATE in repos:
