@@ -1,10 +1,10 @@
+import ast
 import logging
 import os
 from glob import glob
 from pprint import pformat
 
 import yaml
-import ast
 
 PROJECT_DIR = "projects"
 CONFIG_DIR = "config"
@@ -252,3 +252,34 @@ class Addons:
                 )
             for repo in repos:
                 yield addon, repo
+
+    @staticmethod
+    def get_external_requirements(addon_paths):
+        requirements = set()
+
+        for addon_path in addon_paths:
+            manifest_path = None
+            for filename in MANIFESTS:
+                candidate = os.path.join(addon_path, filename)
+                if os.path.isfile(candidate):
+                    manifest_path = candidate
+                    break
+            if not manifest_path:
+                raise FileNotFoundError(f"Manifest not found in {addon_path}")
+
+            try:
+                with open(manifest_path, encoding="utf-8") as f:
+                    manifest_data = ast.literal_eval(f.read())
+
+                ext_deps = manifest_data.get("external_dependencies") or {}
+                python_reqs = ext_deps.get("python", {})
+
+                if isinstance(python_reqs, dict):
+                    requirements.update(python_reqs.keys())
+                elif isinstance(python_reqs, list):
+                    requirements.update(python_reqs)
+                # else: ignore unexpected formats silently
+            except Exception as e:
+                print(f"⚠️ Could not parse {manifest_path}: {e}")
+
+        return sorted(requirements)

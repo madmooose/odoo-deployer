@@ -210,17 +210,19 @@ class GitHandler:
 
     def push(self, repo, task_vals, state, files):
         """Push changes to the remote repository."""
+
+        module_name = task_vals["module_name"]
+        if module_name == "*":
+            module_name = task_vals["ife_repository"].split("/")[-1]
         try:
             if files:
                 repo.git.add(files)
             else:
                 repo.git.add(".")
             if state == "added":
-                commit_message = f"[{task_vals['id']}][ADD] {task_vals['module_name']}"
+                commit_message = f"[{task_vals['id']}][ADD] {module_name}"
             else:
-                commit_message = (
-                    f"[{task_vals['id']}][UPDATE] {task_vals['module_name']}"
-                )
+                commit_message = f"[{task_vals['id']}][UPDATE] {module_name}"
             repo.git.commit("-m", commit_message)
             repo.git.push("origin", repo.active_branch.name)
             print(f"✅ Pushed changes to {repo.active_branch.name} branch")
@@ -336,7 +338,9 @@ def create(task_id, generate, repo_name):
 
     task_id = task_vals["id"]
     module_name = task_vals["module_name"]
-    module_repository = task_vals["ife_repository"]
+    module_repository = (
+        task_vals["ife_repository"].strip().rstrip("/").removesuffix(".git")
+    )
     customer_repo_name = task_vals["key"]
     module_repo_name = module_repository.split("/")[-1]
     module_organisation = module_repository.split("/")[-2]
@@ -437,16 +441,48 @@ def generate_addons_folder(task_vals, repo_name, git_handler):
     except subprocess.CalledProcessError as e:
         print(f"❌ Error occurred while running gitaggregate: {e}")
 
+    addons_list = []
     # Copy addons to target directory
-    for addon, repo in customer_instance.addons_list(
-        strict=True, odoo_version=odoo_version
-    ):
+    for addon, repo in customer_instance.addons_list(odoo_version=odoo_version):
         src = os.path.join(customer_instance.src_dir, repo, addon)
         dst = os.path.join(customer_instance.addons_dir, repo, addon)
+        addons_list.append(dst)
         shutil.copytree(src, dst)
         print(f"📁 Copied {src} to {dst}")
 
     print(f"✅ Addon folders generated for {customer_slug}")
+
+    requirements = customer_instance.get_external_requirements(addons_list)
+    requirements_path = os.path.join(customer_instance.addons_dir, "requirements.txt")
+    auto_marker = "# auto-generated from modules"
+
+    manual_lines = []
+
+    # Read existing file line-by-line
+    if os.path.exists(requirements_path):
+        with open(requirements_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip() == auto_marker:
+                    break  # Stop at marker
+                dep = line.strip()
+                if dep and not dep.startswith("#") and dep in requirements:
+                    continue  # Skip duplicate of auto-generated
+                manual_lines.append(line)
+
+    # Ensure there's a newline before the marker if needed
+    if manual_lines and not manual_lines[-1].endswith("\n"):
+        manual_lines[-1] += "\n"
+    manual_lines.append(auto_marker + "\n")
+
+    # Write final file
+    with open(requirements_path, "w", encoding="utf-8") as f:
+        f.writelines(manual_lines)
+        for dep in sorted(requirements):
+            f.write(dep + "\n")
+
+    print(
+        f"📄 requirements.txt updated with {len(requirements)} auto-generated dependencies"
+    )
 
 
 @cli.command("clean")
