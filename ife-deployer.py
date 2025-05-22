@@ -270,7 +270,8 @@ class YAMLHandler:
         if not isinstance(modules, CommentedSeq):
             modules = CommentedSeq(modules)
             # Add a blank line before the new repo key
-            existing_data.yaml_set_comment_before_after_key(repo_name, before="\n")
+            if existing_data:
+                existing_data.yaml_set_comment_before_after_key(repo_name, before="\n")
             existing_data[repo_name] = modules
 
         if new_entry not in modules:
@@ -303,7 +304,8 @@ class YAMLHandler:
 
         if repo_name not in existing_data:
             # Add a blank line before the new repo key
-            existing_data.yaml_set_comment_before_after_key(repo_name, before="\n")
+            if existing_data:
+                existing_data.yaml_set_comment_before_after_key(repo_name, before="\n")
             existing_data[repo_name] = new_entry
             print(f"📄 Added '{repo_name}' to repos.yaml at {file_path}")
             new_comment = f"Added from task {task_id}"
