@@ -52,15 +52,21 @@ class OdooClient:
 
     def get_task(self, task_id):
         """Retrieve task details from Odoo using the task ID."""
-        required_fields = [
+        required_task_fields = [
+            "project_id",
             "type_id",
             "stage_id",
             "key",
+            "ife_repository",
             "ife_repository",
             "module_name",
             "odoo_version_id",
             "hosting",
             "customer_repository",
+        ]
+
+        required_project_fields = [
+            "ife_repository",
         ]
 
         try:
@@ -70,20 +76,45 @@ class OdooClient:
                 self.token,
                 "project.task",
                 "read",
-                [[task_id], required_fields],
+                [[task_id], required_task_fields],
             )
-
             if not task:
                 raise ValueError("Task not found")
 
             task_data = task[0]
+            project_id = int(task_data["project_id"][0])  # Use the integer ID
+
+            project = self.models.execute_kw(
+                self.db,
+                self.uid,
+                self.token,
+                "project.project",
+                "read",
+                [[project_id], required_project_fields],
+            )
+            if not project:
+                raise ValueError("Project not found")
+
+            project_data = project[0]
             errors = []
 
-            missing_fields = [
-                field for field in required_fields if not task_data.get(field)
+            missing_task_fields = [
+                field for field in required_task_fields if not task_data.get(field)
             ]
-            if missing_fields:
-                errors.append(f"Missing required fields: {', '.join(missing_fields)}")
+            if missing_task_fields:
+                errors.append(
+                    f"Missing required fields: {', '.join(missing_task_fields)}"
+                )
+
+            missing_project_fields = [
+                field
+                for field in required_project_fields
+                if not project_data.get(field)
+            ]
+            if missing_project_fields:
+                errors.append(
+                    f"Missing required fields: {', '.join(missing_project_fields)}"
+                )
 
             if (
                 task_data.get("type_id")
@@ -105,6 +136,11 @@ class OdooClient:
                 errors.append(
                     f"Invalid hosting: {task_data.get('hosting')}. Expected 'odoo_sh'."
                 )
+
+            if project_data.get("ife_repository"):
+                task_data["project_ife_repository"] = project_data.get("ife_repository")
+            else:
+                errors.append("Project ife_repository is not set.")
 
             if errors:
                 raise ValueError("\n".join(errors))
@@ -344,6 +380,8 @@ def create(task_id, generate, repo_name):
         task_vals["ife_repository"].strip().rstrip("/").removesuffix(".git")
     )
     customer_repo_name = task_vals["key"]
+    customer_project_repo_url = task_vals["project_ife_repository"]
+    customer_task_repo_url = task_vals["ife_repository"]
     module_repo_name = module_repository.split("/")[-1]
     module_organisation = module_repository.split("/")[-2]
     module_full_repo_name = f"{module_organisation}/{module_repo_name}"
@@ -351,7 +389,9 @@ def create(task_id, generate, repo_name):
     odoo_version = task_vals["odoo_version_id"][1]
     customer_dir = os.path.join(addons.PROJECT_DIR, customer_repo_name)
     if module_organisation == "ifegmbh":
-        if module_repo_name == "3rd-party":
+        if customer_task_repo_url == customer_project_repo_url:
+            module_full_repo_name = customer_repo_name
+        elif module_repo_name == "3rd-party":
             module_full_repo_name = "3rd-party"
         else:
             module_full_repo_name = f"ife/{module_repo_name}"
@@ -418,6 +458,7 @@ def generate_addons_folder(task_vals, repo_name, git_handler):
     # Remove old addon folders
     for addon in iglob(os.path.join(customer_instance.addons_dir, "*")):
         if os.path.isdir(addon):
+            # TODO: Keep customer folder but recreate the content if available.
             shutil.rmtree(addon)
 
     customer_dir = os.path.join(addons.PROJECT_DIR, customer_slug)
@@ -485,6 +526,7 @@ def generate_addons_folder(task_vals, repo_name, git_handler):
     print(
         f"📄 requirements.txt updated with {len(requirements)} auto-generated dependencies"
     )
+    # TODO: Add commit message figure out how to get state ([update] or [ADD])
 
 
 @cli.command("clean")
