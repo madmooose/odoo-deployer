@@ -58,6 +58,7 @@ class OdooClient:
             "stage_id",
             "key",
             "ife_repository",
+            "ife_repository",
             "module_name",
             "odoo_version_id",
             "hosting",
