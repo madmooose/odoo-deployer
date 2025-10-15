@@ -11,7 +11,6 @@ CONFIG_DIR = "config"
 ADDONS_DIR = "addons"
 DATA_DIR = "data"
 SRC_DIR = os.path.join(DATA_DIR, "src")
-CLEAN = os.environ.get("CLEAN") == "true"
 LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 PRIVATE = "private"
 CORE = "odoo/addons"
@@ -197,7 +196,7 @@ class Addons:
                 standard_modules = {line.strip() for line in f if line.strip()}
         else:
             logger.warning(
-                "Missing odoo16_modules.txt – skipping standard module check"
+                f"Missing odoo{odoo_version}_modules.txt – skipping standard module check"
             )
 
         addon_names = set(str(k).strip() for k in config.keys())

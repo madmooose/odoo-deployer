@@ -367,7 +367,7 @@ def cli():
 @click.option("--generate", is_flag=True, help="Also run generate step after create")
 @click.option("-d", "--repo-name", default=None, help="Repository to limit generation")
 def create(task_id, generate, repo_name):
-    """Deploy a module by fetching from GitHub and verifying with Odoo."""
+    """Fetches ticket information from Odoo task and creates a feature brnach based on that."""
     odoo_client = OdooClient(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN)
     git_handler = GitHandler(GITHUB_ORG)
     yaml_handler = YAMLHandler()
@@ -483,6 +483,7 @@ def generate_addons_folder(task_vals, repo_name, git_handler):
         print(f"✅ Successfully ran gitaggregate for {customer_slug}")
     except subprocess.CalledProcessError as e:
         print(f"❌ Error occurred while running gitaggregate: {e}")
+        sys.exit(1)
 
     addons_list = []
     # Copy addons to target directory
@@ -543,14 +544,13 @@ def clean(task_id):
         "Addons": os.path.join(customer_dir, addons.ADDONS_DIR),
     }
 
+    # Clean config and addons repos
     for name, path in repo_paths.items():
         try:
             repo = git.Repo(path)
             print(f"🧹 Cleaning {name} repo at {path}...")
-
             repo.git.reset("--hard")
             repo.git.clean("-fd")
-
             print(f"✅ {name} directory cleaned.")
         except git.exc.InvalidGitRepositoryError:
             print(f"❌ {path} is not a valid Git repository.")
@@ -558,6 +558,31 @@ def clean(task_id):
         except Exception as e:
             print(f"❌ Error while cleaning the {name} repo: {e}")
             sys.exit(1)
+
+    # Clean all repos in SRC_DIR from repos.yaml
+    # TODO: get yaml from Addons instance
+    repos_yaml_path = os.path.join(repo_paths["Config"], "repos.yaml")
+    if os.path.exists(repos_yaml_path):
+        yaml = YAML()
+        with open(repos_yaml_path, "r") as f:
+            repos_data = yaml.load(f) or {}
+        for repo_dir in repos_data.keys():
+            # Remove leading './' if present
+            repo_path = os.path.join(
+                addons.SRC_DIR, repo_dir[2:] if repo_dir.startswith("./") else repo_dir
+            )
+            if os.path.isdir(repo_path):
+                try:
+                    repo = git.Repo(repo_path)
+                    repo.git.reset("--hard")
+                    repo.git.clean("-fd")
+                    print(f"✅ SRC_DIR repo cleaned: {repo_path}")
+                except git.exc.InvalidGitRepositoryError:
+                    print(f"❌ {repo_path} is not a valid Git repository.")
+                    sys.exit(1)
+                except Exception as e:
+                    print(f"❌ Error while cleaning SRC_DIR repo {repo_path}: {e}")
+                    sys.exit(1)
 
 
 @cli.command("init")
