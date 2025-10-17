@@ -18,6 +18,29 @@ python ife-deployer.py create <task_id> [--generate] [-d <repo_name>]
 - `--generate`: Also run generate step after create
 - `-d, --repo-name <repo_name>`: Limit generation to a specific repository
 
+## Freeze Commit Hashes
+
+To get reproducable builds we want to make sure, we always get the same version of a module. This can be archived with referenzing commit hashes instead of branches. In order to update these hashes you can use the freeze command.
+You can specify the default branch in the defaults section of the repos.yaml. You can also exclude repos from the freeze command with an auto flag.
+
+```yaml
+./syscoon/syscoon-datev-package-full:
+  defaults:
+    depth: 1
+    branch: 16.0
+    auto: 0
+  remotes:
+    ife: gh:ifegmbh/syscoon-datev-package-full
+  merges:
+  - ife ddfb18462c17010c29b93df9f8dd97264d10963c
+```
+
+```sh
+python ife-deployer.py freeze <task_id> [-d <repo_name>]
+```
+- `-d, --repo-name <repo_name>`: Limit freezing to a specific repository
+- `-f`: Also update auto: 0 entries
+
 ## Generate Addon Folders
 
 To generate addon folders for a given task:

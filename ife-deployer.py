@@ -449,6 +449,79 @@ def create(task_id, generate, repo_name):
         generate_addons_folder(task_vals, repo_name, git_handler)
 
 
+@cli.command("freeze")
+@click.argument("task_id", type=int)
+@click.option(
+    "-d", "--repo-dir", default=None, help="Only update a specific repo directory"
+)
+@click.option("-f", "--force", is_flag=True, help="Force update even if auto: 0 is set")
+def freeze(task_id, repo_dir, force):
+    """Freeze all repos in SRC_DIR by updating merges entry in repos.yaml with current commit hash, or only the specified repo with -d. Use -f to force update even if auto: 0 is set."""
+    odoo_client = OdooClient(ODOO_URL, ODOO_DB, ODOO_USER, ODOO_TOKEN)
+    task_vals = odoo_client.get_task(task_id)
+    odoo_version = task_vals["odoo_version_id"][1]
+    customer_repo_name = task_vals["key"]
+    customer_dir = os.path.join(addons.PROJECT_DIR, customer_repo_name)
+    repos_yaml_path = os.path.abspath(
+        os.path.join(customer_dir, "config", "repos.yaml")
+    )
+    if not os.path.exists(repos_yaml_path):
+        print(f"❌ repos.yaml not found at {repos_yaml_path}")
+        sys.exit(1)
+    yaml = YAML()
+    with open(repos_yaml_path, "r") as f:
+        repos_data = yaml.load(f) or {}
+    updated = False
+    for repo_key, repo_info in repos_data.items():
+        # If -d is set, skip all except the specified repo
+        if repo_dir and repo_key != repo_dir:
+            continue
+        defaults = repo_info.get("defaults", {})
+        if not force and defaults.get("auto", 1) == 0:
+            print(f"⏭️ Skipping freeze for {repo_key} (auto: 0)")
+            continue
+        repo_path = os.path.join(
+            addons.SRC_DIR, repo_key[2:] if repo_key.startswith("./") else repo_key
+        )
+        if not os.path.isdir(repo_path):
+            print(f"❌ Repo dir not found: {repo_path}")
+            continue
+        remotes = repo_info.get("remotes", {})
+        if not remotes:
+            print(f"❌ No remotes defined for {repo_key}")
+            continue
+        first_remote_alias = next(iter(remotes.keys()))
+        default_branch = defaults.get("branch", odoo_version)
+        try:
+            repo = git.Repo(repo_path)
+            remote_url = remotes[first_remote_alias]
+            # Try to get the commit hash of the default branch from the remote
+            refs = repo.git.ls_remote(
+                remote_url, f"refs/heads/{default_branch}"
+            ).splitlines()
+            if not refs:
+                print(
+                    f"❌ Could not find branch {default_branch} on remote {remote_url}"
+                )
+                continue
+            commit_hash = refs[0].split()[0]
+            merges = repo_info.get("merges", [])
+            if merges:
+                merges[0] = f"{first_remote_alias} {commit_hash}"
+            else:
+                merges = [f"{first_remote_alias} {commit_hash}"]
+            repo_info["merges"] = merges
+            print(f"🔒 {repo_key}: {first_remote_alias} {commit_hash}")
+            updated = True
+        except Exception as e:
+            print(f"❌ Error freezing {repo_key}: {e}")
+            sys.exit(1)
+    if updated:
+        with open(repos_yaml_path, "w") as f:
+            yaml.dump(repos_data, f)
+        print("✅ repos.yaml updated with frozen commit hashes.")
+
+
 def generate_addons_folder(task_vals, repo_name, git_handler):
     """Generate addon folders by copying from the source."""
     odoo_version = task_vals["odoo_version_id"][1]
