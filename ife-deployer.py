@@ -276,14 +276,21 @@ class YAMLHandler:
         self.yaml.width = 1000
         self.yaml.indent(mapping=2, sequence=4, offset=2)
 
+    def load(self, file_path):
+        """Load YAML data from a file."""
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                return self.yaml.load(f) or {}
+        return {}
+
+    def save(self, file_path, data):
+        """Save YAML data to a file."""
+        with open(file_path, "w") as f:
+            self.yaml.dump(data, f)
+
     def update_yaml(self, file_path, repo_name, new_entry, task_id, is_addons=True):
         """Updates addons.yaml or repos.yaml with the new module or repository."""
-        if os.path.exists(file_path):
-            with open(file_path, "r") as file:
-                existing_data = self.yaml.load(file) or {}
-        else:
-            existing_data = {}
-
+        existing_data = self.load(file_path)
         if is_addons:
             return self.update_addons_yaml(
                 file_path, existing_data, repo_name, new_entry, task_id
@@ -321,9 +328,7 @@ class YAMLHandler:
             state = "updated"
             print(f"📄 Updated comment for '{new_entry}' in addons.yaml at {file_path}")
 
-        with open(file_path, "w") as file:
-            self.yaml.dump(existing_data, file)
-
+        self.save(file_path, existing_data)
         return state
 
     def update_repos_yaml(
@@ -349,8 +354,7 @@ class YAMLHandler:
             changed = True
 
         if changed:
-            with open(file_path, "w") as file:
-                self.yaml.dump(existing_data, file)
+            self.save(file_path, existing_data)
 
         return changed
 
@@ -468,9 +472,8 @@ def freeze(task_id, repo_dir, force):
     if not os.path.exists(repos_yaml_path):
         print(f"❌ repos.yaml not found at {repos_yaml_path}")
         sys.exit(1)
-    yaml = YAML()
-    with open(repos_yaml_path, "r") as f:
-        repos_data = yaml.load(f) or {}
+    yaml_handler = YAMLHandler()
+    repos_data = yaml_handler.load(repos_yaml_path)
     updated = False
     for repo_key, repo_info in repos_data.items():
         # If -d is set, skip all except the specified repo
@@ -506,20 +509,19 @@ def freeze(task_id, repo_dir, force):
                 continue
             commit_hash = refs[0].split()[0]
             merges = repo_info.get("merges", [])
+            # Ensure merges is always a list (preserve ruamel.yaml type if possible)
+            if not isinstance(merges, list):
+                merges = list(merges)
             old_hash = None
             if merges:
-                # Try to extract the hash from the first merge entry
                 parts = merges[0].split()
                 if len(parts) > 1:
                     old_hash = parts[1]
                 if old_hash == commit_hash:
-                    print(
-                        f"⏭️ {repo_key}: {first_remote_alias} already at {commit_hash}"
-                    )
                     continue
                 merges[0] = f"{first_remote_alias} {commit_hash}"
             else:
-                merges = [f"{first_remote_alias} {commit_hash}"]
+                merges = CommentedSeq([f"{first_remote_alias} {commit_hash}"])
             repo_info["merges"] = merges
             print(f"🔒 {repo_key}: {first_remote_alias} {commit_hash}")
             updated = True
@@ -527,8 +529,7 @@ def freeze(task_id, repo_dir, force):
             print(f"❌ Error freezing {repo_key}: {e}")
             sys.exit(1)
     if updated:
-        with open(repos_yaml_path, "w") as f:
-            yaml.dump(repos_data, f)
+        yaml_handler.save(repos_yaml_path, repos_data)
         print("✅ repos.yaml updated with frozen commit hashes.")
 
 
