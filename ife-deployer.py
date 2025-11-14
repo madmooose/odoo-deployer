@@ -205,7 +205,7 @@ class GitHandler:
                     repo.git.checkout(branch)
                     repo.git.pull("origin", branch)
                     return branch.split("/")[2]
-            # TODO: Find a proper why to get the default branch from GitHub
+            # TODO: Find a proper way to get the default branch from GitHub
             # if remote_branches:
             #     default_branch = remote_branches[0].split('/')[-1]
             #     return repo.remotes.origin.refs[default_branch]
@@ -506,7 +506,17 @@ def freeze(task_id, repo_dir, force):
                 continue
             commit_hash = refs[0].split()[0]
             merges = repo_info.get("merges", [])
+            old_hash = None
             if merges:
+                # Try to extract the hash from the first merge entry
+                parts = merges[0].split()
+                if len(parts) > 1:
+                    old_hash = parts[1]
+                if old_hash == commit_hash:
+                    print(
+                        f"⏭️ {repo_key}: {first_remote_alias} already at {commit_hash}"
+                    )
+                    continue
                 merges[0] = f"{first_remote_alias} {commit_hash}"
             else:
                 merges = [f"{first_remote_alias} {commit_hash}"]
