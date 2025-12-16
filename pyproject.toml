@@ -1,0 +1,31 @@
+[project]
+name = "ife-deployer"
+version = "0.1.0"
+description = "Helper Program for the aggregation of Odoo Modules based on yaml files"
+authors = [
+    {name = "Niels Göttsch",email = "ng@ife.de"}
+]
+license = {text = "LGPL-3"}
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "click",
+    "gitpython",
+    "pyyaml",
+    "dotenv",
+    "git-aggregator",
+    "ruamel.yaml"
+]
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.0.1,<10.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+ife-deployer = "ife_deployer:cli"

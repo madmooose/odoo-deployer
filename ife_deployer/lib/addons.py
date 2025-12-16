@@ -10,7 +10,7 @@ PROJECT_DIR = "projects"
 CONFIG_DIR = "config"
 ADDONS_DIR = "addons"
 DATA_DIR = "data"
-SRC_DIR = os.path.join(DATA_DIR, "src")
+SRC_DIR = "src"
 LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 PRIVATE = "private"
 CORE = "odoo/addons"
@@ -42,9 +42,13 @@ class AddonsConfigError(Exception):
 
 
 class Addons:
-    def __init__(self, slug, init=False):
+    def __init__(self, slug=False, init=False):
         self.slug = slug
-        customer_dir = os.path.join(PROJECT_DIR, self.slug)
+        if self.slug:
+            customer_dir = os.path.join(PROJECT_DIR, self.slug)
+        else:
+            customer_dir = os.getcwd()
+        self.customer_dir = customer_dir
         if init:
             if not os.path.isdir(customer_dir):
                 os.makedirs(customer_dir)
@@ -63,29 +67,29 @@ class Addons:
             os.makedirs(self.config_dir)
         elif not os.path.isdir(self.config_dir):
             raise FileNotFoundError("Config folder not found")
-        self.src_dir = SRC_DIR
+        if self.slug:
+            self.src_dir = os.path.join(DATA_DIR, SRC_DIR)
+        else:
+            self.src_dir = os.path.join(customer_dir, SRC_DIR)
         if not os.path.isdir(self.src_dir):
             os.makedirs(self.src_dir)
-        self.addons_yaml = os.path.join(self.config_dir, "addons")
-        if os.path.isfile("%s.yaml" % self.addons_yaml):
-            self.addons_yaml = "%s.yaml" % self.addons_yaml
-        elif os.path.isfile("%s.yml" % self.addons_yaml):
-            self.addons_yaml = "%s.yml" % self.addons_yaml
-        elif init:
-            with open("%s.yaml" % self.addons_yaml, "w") as addons_file:
-                addons_file.write("# Addons configuration\n")
-        else:
-            raise FileNotFoundError("addons.yaml not found")
-        self.repos_yaml = os.path.join(self.config_dir, "repos")
-        if os.path.isfile("%s.yaml" % self.repos_yaml):
-            self.repos_yaml = "%s.yaml" % self.repos_yaml
-        elif os.path.isfile("%s.yml" % self.repos_yaml):
-            self.repos_yaml = "%s.yml" % self.repos_yaml
-        elif init:
-            with open("%s.yaml" % self.repos_yaml, "w") as repos_file:
-                repos_file.write("# Repos configuration")
-        else:
-            raise FileNotFoundError("repos.yaml not found")
+
+        for file in ["config", "addons", "repos"]:
+            yaml_file = os.path.join(self.config_dir, file)
+            if os.path.isfile("%s.yaml" % yaml_file):
+                yaml_file = "%s.yaml" % yaml_file
+            elif os.path.isfile("%s.yml" % yaml_file):
+                yaml_file = "%s.yml" % yaml_file
+            elif init:
+                with open("%s.yaml" % yaml_file, "w") as addons_file:
+                    addons_file.write(f"# {file.capitalize()} configuration\n")
+            else:
+                raise FileNotFoundError(f"{file}.yaml not found")
+            setattr(self, f"{file}_yaml", yaml_file)
+
+        with open(self.config_yaml) as config_file:
+            config_data = yaml.safe_load(config_file)
+            self.odoo_version = str(config_data.get("VERSION", ""))
 
     def extract_manifest_dict(self, path):
         with open(path, encoding="utf-8") as f:
@@ -113,7 +117,8 @@ class Addons:
         :return Iterator[str, str]:
             A generator that yields ``(addon, repo)`` pairs.
         """
-
+        if not odoo_version:
+            odoo_version = self.odoo_version
         config = dict()
         missing_glob = set()
         missing_manifest = set()
@@ -149,7 +154,7 @@ class Addons:
         for repo, partial_globs in all_globs.items():
             for partial_glob in partial_globs:
                 logger.debug("Expanding in repo %s glob %s", repo, partial_glob)
-                full_glob = os.path.join(SRC_DIR, repo, partial_glob)
+                full_glob = os.path.join(self.src_dir, repo, partial_glob)
                 found = glob(full_glob)
                 if not found:
                     # Projects without private addons should never fail
