@@ -1,9 +1,9 @@
 [project]
-name = "ife-deployer"
-version = "0.1.0"
+name = "odoo-deployer"
+version = "0.2.0"
 description = "Helper Program for the aggregation of Odoo Modules based on yaml files"
 authors = [
-    {name = "Niels Göttsch",email = "ng@ife.de"}
+    {name = "Niels Göttsch",email = "niels@ziemlichoptimal.de"}
 ]
 license = {text = "LGPL-3"}
 readme = "README.md"
@@ -28,4 +28,4 @@ requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-ife-deployer = "ife_deployer:cli"
+odoo-deployer = "odoo_deployer:cli"

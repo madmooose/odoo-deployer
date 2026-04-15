@@ -32,7 +32,7 @@ def cli():
     pass
 
 
-# python ife-deployer.py create 123 --generate -d ife_project
+# python odoo-deployer.py create 123 --generate -d project
 @cli.command()
 @click.argument("task_id", type=int)
 @click.option("--generate", is_flag=True, help="Also run generate step after create")
@@ -47,25 +47,14 @@ def create(task_id, generate, repo_name):
 
     task_id = task_vals["id"]
     module_name = task_vals["module_name"]
-    module_repository = (
-        task_vals["ife_repository"].strip().rstrip("/").removesuffix(".git")
-    )
+    module_repository = task_vals["repository"].strip().rstrip("/").removesuffix(".git")
     customer_repo_name = task_vals["key"]
-    customer_project_repo_url = task_vals["project_ife_repository"]
-    customer_task_repo_url = task_vals["ife_repository"]
     module_repo_name = module_repository.split("/")[-1]
     module_organisation = module_repository.split("/")[-2]
     module_full_repo_name = f"{module_organisation}/{module_repo_name}"
     module_repo_url = f"{GITHUB_URL}:{module_full_repo_name}.git"
     odoo_version = task_vals["odoo_version_id"][1]
     customer_dir = os.path.join(addons.PROJECT_DIR, customer_repo_name)
-    if module_organisation == "ifegmbh":
-        if customer_task_repo_url == customer_project_repo_url:
-            module_full_repo_name = customer_repo_name
-        elif module_repo_name == "3rd-party":
-            module_full_repo_name = "3rd-party"
-        else:
-            module_full_repo_name = f"ife/{module_repo_name}"
 
     if not os.path.exists(customer_dir):
         addons.Addons(slug=customer_repo_name, init=True)

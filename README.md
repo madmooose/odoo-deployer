@@ -5,15 +5,16 @@
 To initialize a new customer folder structure:
 
 ```sh
-python ife-deployer.py init <customer>
+python odoo-deployer.py init <customer>
 ```
 
 ## Create and Deploy a Module
 
+Note: For this to work you need to custom repository char field on the tasks model
 To deploy a module by fetching from GitHub and verifying with Odoo:
 
 ```sh
-python ife-deployer.py create <task_id> [--generate] [-d <repo_name>]
+python odoo-deployer.py create <task_id> [--generate] [-d <repo_name>]
 ```
 - `--generate`: Also run generate step after create
 - `-d, --repo-name <repo_name>`: Limit generation to a specific repository
@@ -24,19 +25,19 @@ To get reproducable builds we want to make sure, we always get the same version 
 You can specify the default branch in the defaults section of the repos.yaml. You can also exclude repos from the freeze command with an auto flag.
 
 ```yaml
-./syscoon/syscoon-datev-package-full:
+./oca/partner-contact:
   defaults:
     depth: 1
     branch: 16.0
     auto: 0
   remotes:
-    ife: gh:ifegmbh/syscoon-datev-package-full
+    oca: gh:OCA/partner-contact
   merges:
-  - ife ddfb18462c17010c29b93df9f8dd97264d10963c
+  - oca 7acbeb8d0c21198d69a70ba1b1452a78e2a7aa55
 ```
 
 ```sh
-python ife-deployer.py freeze <task_id> [-d <repo_name>]
+python odoo-deployer.py freeze <task_id> [-d <repo_name>]
 ```
 - `-d, --repo-name <repo_name>`: Limit freezing to a specific repository
 - `-f`: Also update auto: 0 entries
@@ -46,7 +47,7 @@ python ife-deployer.py freeze <task_id> [-d <repo_name>]
 To generate addon folders for a given task:
 
 ```sh
-python ife-deployer.py generate <task_id> [-d <repo_name>]
+python odoo-deployer.py generate <task_id> [-d <repo_name>]
 ```
 - `-d, --repo-name <repo_name>`: Limit generation to a specific repository
 
@@ -55,7 +56,7 @@ python ife-deployer.py generate <task_id> [-d <repo_name>]
 To discard all changes and untracked files in both config and addons repos for a specific task:
 
 ```sh
-python ife-deployer.py clean <task_id>
+python odoo-deployer.py clean <task_id>
 ```
 
 ## Help
@@ -63,5 +64,5 @@ python ife-deployer.py clean <task_id>
 To show all available commands and options:
 
 ```sh
-python ife-deployer.py --help
+python odoo-deployer.py --help
 ```
